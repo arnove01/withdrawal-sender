@@ -8,6 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import telegramRouter, { setupBot } from "../telegram";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -36,6 +37,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  // Telegram bot webhook
+  app.use("/api/telegram", telegramRouter);
   // tRPC API
   app.use(
     "/api/trpc",
@@ -51,7 +54,7 @@ async function startServer() {
     serveStatic(app);
   }
 
-  const preferredPort = parseInt(process.env.PORT || "3000");
+  const preferredPort = parseInt(process.env.PORT || "3000", 10);
   const port = await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
@@ -60,7 +63,20 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    // Setup Telegram bot webhook on startup
+    setupBot()
+      .then(result => {
+        if (result.ok) {
+          console.log(`[TG] Webhook registered: ${result.webhookUrl}`);
+        } else {
+          console.warn(`[TG] Webhook setup failed:`, result.error, result.description);
+        }
+      })
+      .catch(err => console.warn(`[TG] Webhook setup error:`, err));
   });
 }
 
-startServer().catch(console.error);
+startServer().catch(err => {
+  console.error("Server startup error:", err);
+  process.exit(1);
+});
